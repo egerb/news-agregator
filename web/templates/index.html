@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Aggregator - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <a href="/" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900 font-medium">Dashboard</a>
+                    <a href="/config" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900">Configuration</a>
+                    <a href="/scheduler" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900">Scheduler</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="px-4 py-6 sm:px-0">
+            <div class="border-4 border-dashed border-gray-200 rounded-lg p-6">
+                <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
+                
+                <div class="mb-6">
+                    <button id="executeBtn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                        Execute Now
+                    </button>
+                    <span id="status" class="ml-4"></span>
+                </div>
+
+                <div class="mb-6">
+                    <h2 class="text-xl font-semibold mb-2">Status</h2>
+                    <div class="bg-white p-4 rounded shadow">
+                        <p class="mb-2"><strong>Current Time:</strong> <span id="currentTime" class="font-mono"></span></p>
+                        <p class="mb-2">Scheduler Running: <span id="isRunning">{{.IsRunning}}</span></p>
+                        <p class="mb-2">Currently Executing: <span id="isExecuting">{{.IsExecuting}}</span></p>
+                        <p>Next Run: <span id="nextRunTime" class="font-mono">
+                            {{if .NextRunTime}}{{.NextRunTime.Format "2006-01-02 15:04:05 MST"}}{{else}}Not scheduled{{end}}
+                        </span></p>
+                        <div id="progressContainer" class="mt-4 hidden">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium text-gray-700" id="progressText">Processing...</span>
+                                <span class="text-sm text-gray-500" id="progressPercent">0%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1" id="progressDetails"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h2 class="text-xl font-semibold mb-2">Execution Logs <span id="logsInfo" class="text-sm text-gray-500">(Showing last 10)</span></h2>
+                    <div class="bg-white rounded shadow overflow-hidden">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Topic</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Message</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Links</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Debug</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTable" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="pagination" class="mt-4 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <button id="prevPage" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed" disabled>Previous</button>
+                            <span id="pageInfo" class="text-sm text-gray-600">Page 1</span>
+                            <button id="nextPage" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed" disabled>Next</button>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <span id="totalInfo">Total: 0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    let currentPage = 1;
+    const limit = 10;
+    let totalPages = 1;
+
+    async function loadLogs(page) {
+        try {
+            const res = await fetch(`/api/logs?page=${page}&limit=${limit}`);
+            if (!res.ok) {
+                console.error('Failed to load logs:', res.statusText);
+                return;
+            }
+            const data = await res.json();
+            
+            const tbody = document.getElementById('logsTable');
+            tbody.innerHTML = '';
+            
+            if (!data.logs || data.logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No logs found</td></tr>';
+                document.getElementById('pageInfo').textContent = 'Page 1 of 1';
+                document.getElementById('totalInfo').textContent = 'Total: 0';
+                document.getElementById('logsInfo').textContent = '(No logs)';
+                document.getElementById('prevPage').disabled = true;
+                document.getElementById('nextPage').disabled = true;
+                return;
+            }
+            
+            data.logs.forEach((log, index) => {
+                const row = document.createElement('tr');
+                row.className = 'cursor-pointer hover:bg-gray-50';
+                row.onclick = () => toggleDebug(`debug-${page}-${index}`);
+                
+                let timestamp = '';
+                try {
+                    if (log.timestamp) {
+                        const ts = new Date(log.timestamp);
+                        timestamp = ts.toLocaleString();
+                    }
+                } catch (e) {
+                    timestamp = log.timestamp || 'N/A';
+                }
+                
+                const statusBadge = log.success 
+                    ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Success</span>'
+                    : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Failed</span>';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${timestamp}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${log.topic || ''}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">${log.message || ''}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.links_count || 0}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button class="text-blue-600 hover:text-blue-800">View</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+                
+                if (log.request_url || log.request_body || log.response_code || log.response_body || log.error || (log.parsed_links && log.parsed_links.length > 0)) {
+                    const debugRow = document.createElement('tr');
+                    debugRow.id = `debug-${page}-${index}`;
+                    debugRow.className = 'hidden';
+                    debugRow.innerHTML = `
+                        <td colspan="6" class="px-6 py-4 bg-gray-50">
+                            <div class="space-y-2 text-xs">
+                                ${log.request_url ? `<div><strong>Request URL:</strong> <code class="bg-gray-200 px-2 py-1 rounded">${log.request_url}</code></div>` : ''}
+                                ${log.request_body ? `<div><strong>Request Body:</strong> <pre class="bg-gray-200 p-2 rounded mt-1 overflow-x-auto">${log.request_body}</pre></div>` : ''}
+                                ${log.response_code ? `<div><strong>Response Code:</strong> <span class="bg-gray-200 px-2 py-1 rounded">${log.response_code}</span></div>` : ''}
+                                ${log.response_body ? `<div><strong>Response Body:</strong> <pre class="bg-gray-200 p-2 rounded mt-1 overflow-x-auto max-h-40 overflow-y-auto">${log.response_body}</pre></div>` : ''}
+                                ${log.parsed_links && log.parsed_links.length > 0 ? `<div><strong>Parsed Links (${log.parsed_links.length}):</strong> <ul class="bg-gray-200 p-2 rounded mt-1 max-h-40 overflow-y-auto list-disc list-inside"><li>${log.parsed_links.map(link => `<a href="${link}" target="_blank" class="text-blue-600 hover:underline">${link}</a>`).join('</li><li>')}</li></ul></div>` : ''}
+                                ${log.error ? `<div><strong>Error:</strong> <span class="text-red-600">${log.error}</span></div>` : ''}
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(debugRow);
+                }
+            });
+            
+            if (data.logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No logs found</td></tr>';
+            }
+            
+            currentPage = data.page;
+            totalPages = data.totalPages || 1;
+            
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('totalInfo').textContent = `Total: ${data.total}`;
+            document.getElementById('logsInfo').textContent = `(Showing ${data.logs.length} of ${data.total})`;
+            
+            document.getElementById('prevPage').disabled = currentPage <= 1;
+            document.getElementById('nextPage').disabled = currentPage >= totalPages;
+        } catch (err) {
+            console.error('Failed to load logs:', err);
+            document.getElementById('logsTable').innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-red-500">Error loading logs: ' + err.message + '</td></tr>';
+        }
+    }
+
+    document.getElementById('prevPage').addEventListener('click', () => {
+        if (currentPage > 1) {
+            loadLogs(currentPage - 1);
+        }
+    });
+
+    document.getElementById('nextPage').addEventListener('click', () => {
+        if (currentPage < totalPages) {
+            loadLogs(currentPage + 1);
+        }
+    });
+
+    document.getElementById('executeBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('executeBtn');
+        btn.disabled = true;
+        btn.textContent = 'Executing...';
+        
+        try {
+            const res = await fetch('/api/execute', { method: 'POST' });
+            if (res.ok) {
+                document.getElementById('status').textContent = 'Execution started';
+                setTimeout(() => {
+                    loadLogs(1);
+                    document.getElementById('status').textContent = '';
+                }, 2000);
+            } else {
+                const errText = await res.text();
+                const message = errText || res.statusText;
+                document.getElementById('status').textContent = 'Error: ' + message;
+                alert(message);
+            }
+        } catch (err) {
+            document.getElementById('status').textContent = 'Error: ' + err.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Execute Now';
+        }
+    });
+
+    function updateCurrentTime() {
+        const now = new Date();
+        document.getElementById('currentTime').textContent = now.toLocaleString();
+    }
+    
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 1000);
+
+    let previousExecuting = false;
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            document.getElementById('isRunning').textContent = data.is_running;
+            document.getElementById('isExecuting').textContent = data.is_executing;
+            
+            if (data.next_run_time) {
+                const nextRun = new Date(data.next_run_time);
+                document.getElementById('nextRunTime').textContent = nextRun.toLocaleString();
+            } else {
+                document.getElementById('nextRunTime').textContent = 'Not scheduled';
+            }
+            
+            const progressContainer = document.getElementById('progressContainer');
+            if (data.is_executing) {
+                progressContainer.classList.remove('hidden');
+                const percent = Math.min(100, Math.max(0, data.progress_percent || 0));
+                document.getElementById('progressBar').style.width = percent + '%';
+                document.getElementById('progressPercent').textContent = percent + '%';
+                
+                const processed = data.processed || 0;
+                const total = data.total || 0;
+                
+                if (data.current_topic) {
+                    document.getElementById('progressText').textContent = 'Processing: ' + data.current_topic;
+                    document.getElementById('progressDetails').textContent = 
+                        `Topic ${processed} of ${total}`;
+                } else if (total > 0) {
+                    document.getElementById('progressText').textContent = 'Processing...';
+                    document.getElementById('progressDetails').textContent = 
+                        `Topic ${processed} of ${total}`;
+                } else {
+                    document.getElementById('progressText').textContent = 'Initializing...';
+                    document.getElementById('progressDetails').textContent = '';
+                }
+            } else {
+                progressContainer.classList.add('hidden');
+                
+                if (previousExecuting && !data.is_executing) {
+                    loadLogs(1);
+                }
+            }
+            
+            previousExecuting = data.is_executing;
+        } catch (err) {
+            console.error('Failed to update status:', err);
+        }
+    }, 500);
+
+    function toggleDebug(id) {
+        const debugRow = document.getElementById(id);
+        if (debugRow) {
+            debugRow.classList.toggle('hidden');
+        }
+    }
+
+    loadLogs(1);
+    </script>
+</body>
+</html>

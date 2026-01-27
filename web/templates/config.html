@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Aggregator - Configuration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .blur-sensitive {
+            filter: blur(6px);
+            transition: filter 0.15s ease-in-out;
+        }
+        .blur-sensitive:focus,
+        .blur-sensitive:hover {
+            filter: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <a href="/" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900">Dashboard</a>
+                    <a href="/config" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900 font-medium">Configuration</a>
+                    <a href="/scheduler" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900">Scheduler</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="px-4 py-6 sm:px-0">
+            <div class="border-4 border-dashed border-gray-200 rounded-lg p-6">
+                <h1 class="text-3xl font-bold mb-6">Configuration</h1>
+
+                <div class="space-y-8">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white p-6 rounded shadow">
+                        <h2 class="text-xl font-semibold mb-4">Grok API Configuration</h2>
+                        <form id="grokForm" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">API Key</label>
+                                <input type="password" id="grokApiKey" value="{{.Config.Grok.APIKey}}" class="blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Base URL</label>
+                                <input type="text" id="grokBaseURL" value="{{.Config.Grok.BaseURL}}" class="blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Model</label>
+                                <input type="text" id="grokModel" value="{{.Config.Grok.Model}}" class="blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Tools</label>
+                                <div id="toolsContainer" class="space-y-2">
+                                    {{range .Config.Grok.Tools}}
+                                    <div class="tool-row flex gap-2">
+                                        <input type="text" class="tool-input blur-sensitive flex-1 rounded-md border-gray-300 shadow-sm" value="{{.}}">
+                                        <button type="button" class="remove-tool px-3 py-1 bg-red-500 hover:bg-red-700 text-white rounded">Remove</button>
+                                    </div>
+                                    {{end}}
+                                </div>
+                                <button type="button" id="addToolBtn" class="mt-2 px-3 py-1 bg-green-500 hover:bg-green-700 text-white rounded">Add Tool</button>
+                            </div>
+                            <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save</button>
+                        </form>
+                        </div>
+
+                        <div class="bg-white p-6 rounded shadow">
+                        <h2 class="text-xl font-semibold mb-4">Google Sheets Configuration</h2>
+                        <form id="sheetsForm" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Credentials JSON</label>
+                                <textarea id="sheetsCredentials" rows="10" class="blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm font-mono text-xs">{{.Config.Sheets.CredentialsJSON}}</textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Spreadsheet ID</label>
+                                <input type="text" id="sheetsSpreadsheetID" value="{{.Config.Sheets.SpreadsheetID}}" class="blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Sheet Name</label>
+                                <input type="text" id="sheetsSheetName" value="{{.Config.Sheets.SheetName}}" class="blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            </div>
+                            <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save</button>
+                        </form>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded shadow">
+                        <h2 class="text-xl font-semibold mb-4">Topic-Prompt Pairs</h2>
+                        <div id="topicsContainer" class="space-y-4">
+                            {{range .Config.Topics}}
+                            <div class="topic-row border p-4 rounded">
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Topic</label>
+                                        <input type="text" class="topic-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="{{.Topic}}">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Prompt</label>
+                                        <textarea class="prompt-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" rows="3">{{.Prompt}}</textarea>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Links Count</label>
+                                        <input type="number" min="1" class="count-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="{{if gt .Count 0}}{{.Count}}{{else}}1{{end}}">
+                                    </div>
+                                </div>
+                                <button type="button" class="remove-row mt-2 text-red-600 hover:text-red-800">Remove</button>
+                            </div>
+                            {{end}}
+                        </div>
+                        <button type="button" id="addTopicBtn" class="mt-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Add Topic-Prompt Pair</button>
+                        <button type="button" id="saveTopicsBtn" class="mt-4 ml-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save All Topics</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    document.getElementById('addToolBtn').addEventListener('click', () => {
+        const container = document.getElementById('toolsContainer');
+        const div = document.createElement('div');
+        div.className = 'tool-row flex gap-2';
+        div.innerHTML = `
+            <input type="text" class="tool-input blur-sensitive flex-1 rounded-md border-gray-300 shadow-sm" placeholder="e.g., x_search">
+            <button type="button" class="remove-tool px-3 py-1 bg-red-500 hover:bg-red-700 text-white rounded">Remove</button>
+        `;
+        container.appendChild(div);
+        div.querySelector('.remove-tool').addEventListener('click', () => div.remove());
+    });
+
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-tool')) {
+            e.target.closest('.tool-row').remove();
+        }
+    });
+
+    document.getElementById('grokForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const toolInputs = document.querySelectorAll('.tool-input');
+        const tools = Array.from(toolInputs).map(input => input.value.trim()).filter(t => t !== '');
+        
+        const data = {
+            api_key: document.getElementById('grokApiKey').value,
+            base_url: document.getElementById('grokBaseURL').value,
+            model: document.getElementById('grokModel').value,
+            tools: tools
+        };
+        const res = await fetch('/api/config/grok', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) alert('Grok configuration saved');
+        else alert('Error saving configuration');
+    });
+
+    document.getElementById('sheetsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            credentials_json: document.getElementById('sheetsCredentials').value,
+            spreadsheet_id: document.getElementById('sheetsSpreadsheetID').value,
+            sheet_name: document.getElementById('sheetsSheetName').value
+        };
+        const res = await fetch('/api/config/sheets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) alert('Sheets configuration saved');
+        else alert('Error saving configuration');
+    });
+
+    document.getElementById('addTopicBtn').addEventListener('click', () => {
+        const container = document.getElementById('topicsContainer');
+        const div = document.createElement('div');
+        div.className = 'topic-row border p-4 rounded';
+        div.innerHTML = `
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Topic</label>
+                    <input type="text" class="topic-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Prompt</label>
+                    <textarea class="prompt-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" rows="3"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Links Count</label>
+                    <input type="number" min="1" class="count-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="1">
+                </div>
+            </div>
+            <button type="button" class="remove-row mt-2 text-red-600 hover:text-red-800">Remove</button>
+        `;
+        container.appendChild(div);
+        div.querySelector('.remove-row').addEventListener('click', () => div.remove());
+    });
+
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-row')) {
+            e.target.closest('.topic-row').remove();
+        }
+    });
+
+    document.getElementById('saveTopicsBtn').addEventListener('click', async () => {
+        const rows = document.querySelectorAll('.topic-row');
+        const topics = Array.from(rows).map(row => ({
+            topic: row.querySelector('.topic-input').value,
+            prompt: row.querySelector('.prompt-input').value,
+            count: parseInt(row.querySelector('.count-input').value, 10) || 0
+        })).filter(t => t.topic || t.prompt);
+        
+        const res = await fetch('/api/config/topics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(topics)
+        });
+        if (res.ok) alert('Topics saved');
+        else alert('Error saving topics');
+    });
+    </script>
+</body>
+</html>

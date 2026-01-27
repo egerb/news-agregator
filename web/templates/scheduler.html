@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Aggregator - Scheduler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <a href="/" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900">Dashboard</a>
+                    <a href="/config" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900">Configuration</a>
+                    <a href="/scheduler" class="flex items-center px-2 py-2 text-gray-700 hover:text-gray-900 font-medium">Scheduler</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="px-4 py-6 sm:px-0">
+            <div class="border-4 border-dashed border-gray-200 rounded-lg p-6">
+                <h1 class="text-3xl font-bold mb-6">Scheduler Configuration</h1>
+
+                <div class="bg-white p-6 rounded shadow">
+                    <form id="scheduleForm" class="space-y-4">
+                        <div>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="scheduleEnabled" {{if .Config.Schedule.Enabled}}checked{{end}} class="rounded border-gray-300">
+                                <span class="ml-2 text-sm font-medium text-gray-700">Enable Scheduler</span>
+                            </label>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Schedule Type</label>
+                            <select id="scheduleType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                <option value="daily" {{if eq .Config.Schedule.Type "daily"}}selected{{end}}>Daily</option>
+                                <option value="weekly" {{if eq .Config.Schedule.Type "weekly"}}selected{{end}}>Weekly</option>
+                            </select>
+                        </div>
+                        <div id="dayOfWeekContainer" style="display: {{if eq .Config.Schedule.Type "weekly"}}block{{else}}none{{end}};">
+                            <label class="block text-sm font-medium text-gray-700">Day of Week</label>
+                            <select id="scheduleDayOfWeek" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                <option value="0" {{if eq .Config.Schedule.DayOfWeek 0}}selected{{end}}>Sunday</option>
+                                <option value="1" {{if eq .Config.Schedule.DayOfWeek 1}}selected{{end}}>Monday</option>
+                                <option value="2" {{if eq .Config.Schedule.DayOfWeek 2}}selected{{end}}>Tuesday</option>
+                                <option value="3" {{if eq .Config.Schedule.DayOfWeek 3}}selected{{end}}>Wednesday</option>
+                                <option value="4" {{if eq .Config.Schedule.DayOfWeek 4}}selected{{end}}>Thursday</option>
+                                <option value="5" {{if eq .Config.Schedule.DayOfWeek 5}}selected{{end}}>Friday</option>
+                                <option value="6" {{if eq .Config.Schedule.DayOfWeek 6}}selected{{end}}>Saturday</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Time (HH:MM)</label>
+                            <input type="time" id="scheduleTime" value="{{.Config.Schedule.Time}}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            <p class="mt-1 text-xs text-gray-500">Uses system local timezone</p>
+                        </div>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Schedule</button>
+                    </form>
+                </div>
+
+                <div class="mt-6 bg-white p-6 rounded shadow">
+                    <h2 class="text-xl font-semibold mb-2">Scheduler Status</h2>
+                    <p>Running: <span id="schedulerStatus">{{.IsRunning}}</span></p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    document.getElementById('scheduleType').addEventListener('change', (e) => {
+        document.getElementById('dayOfWeekContainer').style.display = e.target.value === 'weekly' ? 'block' : 'none';
+    });
+
+    document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const timeValue = document.getElementById('scheduleTime').value;
+        const timeParts = timeValue.split(':');
+        const timeStr = timeParts[0] + ':' + timeParts[1];
+        
+        const data = {
+            enabled: document.getElementById('scheduleEnabled').checked,
+            type: document.getElementById('scheduleType').value,
+            time: timeStr,
+            day_of_week: parseInt(document.getElementById('scheduleDayOfWeek').value) || 0
+        };
+        
+        const res = await fetch('/api/config/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            alert('Schedule saved');
+            location.reload();
+        } else {
+            alert('Error saving schedule');
+        }
+    });
+
+    setInterval(async () => {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('schedulerStatus').textContent = data.is_running;
+    }, 2000);
+    </script>
+</body>
+</html>

@@ -1,3 +1,17 @@
+# Small app to fetch news from network
+## Key features
+### LLM config
+### Google Sheets Configuration
+### Scheduler Configuration
+### Topics/Prompts Pairs
+
+<img width="1249" height="671" alt="image" src="https://github.com/user-attachments/assets/5ab31bff-3ffa-4641-aef7-8d2f19b1aa03" />
+<img width="1249" height="671" alt="image" src="https://github.com/user-attachments/assets/3557058b-4727-4779-bd2b-849ebfdcd6dd" />
+<img width="1249" height="671" alt="image" src="https://github.com/user-attachments/assets/c16439d4-0b2f-4a1e-9bbb-5a20c0b99a2a" />
+<img width="1249" height="671" alt="image" src="https://github.com/user-attachments/assets/a80264a5-814c-4b0d-adb2-1273a5438d27" />
+
+
+
 # Google Sheets API Credentials Setup Guide
 
 ## Overview

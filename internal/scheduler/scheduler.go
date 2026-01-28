@@ -194,7 +194,7 @@ func (s *Scheduler) execute() {
 	
 	log.Printf("[%s] [EXECUTION] Creating API clients", time.Now().Format("2006-01-02 15:04:05"))
 
-	grokClient := grok.NewClient(cfg.Grok.APIKey, "", cfg.Grok.Model, cfg.Grok.Tools)
+	grokClient := grok.NewClient(cfg.Grok.APIKey, cfg.Grok.BaseURL, cfg.Grok.Model, cfg.Grok.Tools)
 	sheetsClient, err := sheets.NewClient(cfg.Sheets.CredentialsJSON, cfg.Sheets.SpreadsheetID, cfg.Sheets.SheetName)
 	if err != nil {
 		s.addLog(models.ExecutionLog{

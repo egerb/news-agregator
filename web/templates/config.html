@@ -94,15 +94,15 @@
                                 <div class="grid grid-cols-3 gap-4">
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700">Topic</label>
-                                        <input type="text" class="topic-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="{{.Topic}}">
+                                        <input type="text" class="topic-input mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="{{.Topic}}">
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700">Prompt</label>
-                                        <textarea class="prompt-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" rows="3">{{.Prompt}}</textarea>
+                                        <textarea class="prompt-input mt-1 block w-full rounded-md border-gray-300 shadow-sm" rows="3">{{.Prompt}}</textarea>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700">Links Count</label>
-                                        <input type="number" min="1" class="count-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="{{if gt .Count 0}}{{.Count}}{{else}}1{{end}}">
+                                        <input type="number" min="1" class="count-input mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="{{if gt .Count 0}}{{.Count}}{{else}}1{{end}}">
                                     </div>
                                 </div>
                                 <button type="button" class="remove-row mt-2 text-red-600 hover:text-red-800">Remove</button>
@@ -180,15 +180,15 @@
             <div class="grid grid-cols-3 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Topic</label>
-                    <input type="text" class="topic-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                    <input type="text" class="topic-input mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Prompt</label>
-                    <textarea class="prompt-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" rows="3"></textarea>
+                    <textarea class="prompt-input mt-1 block w-full rounded-md border-gray-300 shadow-sm" rows="3"></textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Links Count</label>
-                    <input type="number" min="1" class="count-input blur-sensitive mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="1">
+                    <input type="number" min="1" class="count-input mt-1 block w-full rounded-md border-gray-300 shadow-sm" value="1">
                 </div>
             </div>
             <button type="button" class="remove-row mt-2 text-red-600 hover:text-red-800">Remove</button>

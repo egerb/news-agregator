@@ -24,8 +24,8 @@
                 <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
                 
                 <div class="mb-6">
-                    <button id="executeBtn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                        Execute Now
+                    <button id="executeBtn" class="text-white font-bold py-2 px-4 rounded {{if .IsExecuting}}bg-amber-500 hover:bg-amber-600{{else}}bg-blue-500 hover:bg-blue-700{{end}}">
+                        {{if .IsExecuting}}Interrupt{{else}}Execute Now{{end}}
                     </button>
                     <span id="status" class="ml-4"></span>
                 </div>
@@ -196,9 +196,24 @@
 
     document.getElementById('executeBtn').addEventListener('click', async () => {
         const btn = document.getElementById('executeBtn');
-        btn.disabled = true;
-        btn.textContent = 'Executing...';
+        const isInterrupt = btn.textContent.trim() === 'Interrupt';
         
+        if (isInterrupt) {
+            try {
+                const res = await fetch('/api/interrupt', { method: 'POST' });
+                if (res.ok) {
+                    document.getElementById('status').textContent = 'Interrupt requested';
+                    setTimeout(() => document.getElementById('status').textContent = '', 3000);
+                } else {
+                    document.getElementById('status').textContent = 'Failed to interrupt';
+                }
+            } catch (err) {
+                document.getElementById('status').textContent = 'Error: ' + err.message;
+            }
+            return;
+        }
+        
+        btn.disabled = true;
         try {
             const res = await fetch('/api/execute', { method: 'POST' });
             if (res.ok) {
@@ -217,9 +232,21 @@
             document.getElementById('status').textContent = 'Error: ' + err.message;
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Execute Now';
+            updateExecuteButton(false);
         }
     });
+    
+    function updateExecuteButton(isExecuting) {
+        const btn = document.getElementById('executeBtn');
+        if (isExecuting) {
+            btn.textContent = 'Interrupt';
+            btn.className = 'bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded';
+            btn.disabled = false;
+        } else {
+            btn.textContent = 'Execute Now';
+            btn.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded';
+        }
+    }
 
     function updateCurrentTime() {
         const now = new Date();
@@ -237,6 +264,7 @@
             const data = await res.json();
             document.getElementById('isRunning').textContent = data.is_running;
             document.getElementById('isExecuting').textContent = data.is_executing;
+            updateExecuteButton(data.is_executing);
             
             if (data.next_run_time) {
                 const nextRun = new Date(data.next_run_time);

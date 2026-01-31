@@ -32,6 +32,7 @@ func main() {
 	http.HandleFunc("/api/config/topics", apiHandler.UpdateTopics)
 	http.HandleFunc("/api/config/schedule", apiHandler.UpdateSchedule)
 	http.HandleFunc("/api/execute", apiHandler.ExecuteNow)
+	http.HandleFunc("/api/interrupt", apiHandler.Interrupt)
 	http.HandleFunc("/api/logs", apiHandler.GetLogs)
 	http.HandleFunc("/api/status", apiHandler.GetStatus)
 

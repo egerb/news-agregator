@@ -86,3 +86,40 @@ func (c *Client) WriteNewsItems(items []models.NewsItem) error {
 
 	return nil
 }
+
+func (c *Client) AppendNewsItems(items []models.NewsItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	var values [][]interface{}
+	for _, item := range items {
+		url := strings.TrimSpace(item.URL)
+		topic := strings.TrimSpace(item.Topic)
+		if url != "" && topic != "" && len(url) > 10 && strings.HasPrefix(url, "http") {
+			values = append(values, []interface{}{url, topic, item.Priority})
+		}
+	}
+	if len(values) == 0 {
+		return nil
+	}
+
+	readRange := fmt.Sprintf("%s!B2:D", c.sheetName)
+	resp, err := c.service.Spreadsheets.Values.Get(c.spreadsheetID, readRange).Do()
+	if err != nil {
+		return fmt.Errorf("failed to read sheet for append: %w", err)
+	}
+	nextRow := 2
+	if len(resp.Values) > 0 {
+		nextRow = 2 + len(resp.Values)
+	}
+	range_ := fmt.Sprintf("%s!B%d", c.sheetName, nextRow)
+	valueRange := &sheets.ValueRange{Values: values}
+	_, err = c.service.Spreadsheets.Values.Update(c.spreadsheetID, range_, valueRange).
+		ValueInputOption("RAW").
+		Do()
+	if err != nil {
+		return fmt.Errorf("failed to append to sheet: %w", err)
+	}
+	return nil
+}

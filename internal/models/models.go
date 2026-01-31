@@ -42,15 +42,17 @@ type Config struct {
 }
 
 type ExecutionLog struct {
-	Timestamp    time.Time `json:"timestamp"`
-	Success      bool      `json:"success"`
-	Message      string    `json:"message"`
-	Topic        string    `json:"topic,omitempty"`
-	LinksCount   int       `json:"links_count,omitempty"`
-	ParsedLinks  []string  `json:"parsed_links,omitempty"`
-	RequestURL   string    `json:"request_url,omitempty"`
-	RequestBody  string    `json:"request_body,omitempty"`
-	ResponseCode int       `json:"response_code,omitempty"`
-	ResponseBody string    `json:"response_body,omitempty"`
-	Error        string    `json:"error,omitempty"`
+	Timestamp           time.Time         `json:"timestamp"`
+	Success             bool              `json:"success"`
+	Message             string            `json:"message"`
+	Topic               string            `json:"topic,omitempty"`
+	LinksCount          int               `json:"links_count,omitempty"`
+	ParsedLinks         []string          `json:"parsed_links,omitempty"`
+	ValidationErrors    map[string]string `json:"validation_errors,omitempty"`
+	RequestURL          string            `json:"request_url,omitempty"`
+	RequestBody         string            `json:"request_body,omitempty"`
+	ResponseCode        int               `json:"response_code,omitempty"`
+	ResponseBody        string            `json:"response_body,omitempty"`
+	ResponseTimeSeconds float64           `json:"response_time_seconds,omitempty"`
+	Error               string            `json:"error,omitempty"`
 }

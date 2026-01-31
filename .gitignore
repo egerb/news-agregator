@@ -31,7 +31,7 @@ go.work
 Thumbs.db
 
 # Application specific
-config/credentials.json
+config/
 credentials.json
 *.credentials.json
 config/config.json

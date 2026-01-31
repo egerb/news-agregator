@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,10 +25,12 @@ type Scheduler struct {
 	mu             sync.Mutex
 	logs           []models.ExecutionLog
 	maxLogs        int
-	executing      bool
-	currentTopic   string
-	totalTopics    int
-	processedTopics int
+	executing          bool
+	interruptRequested bool
+	execCancel         context.CancelFunc // cancels in-flight execution for immediate interrupt
+	currentTopic       string
+	totalTopics        int
+	processedTopics    int
 }
 
 const logsFile = "logs.json"
@@ -135,19 +138,24 @@ func (s *Scheduler) execute() {
 		return
 	}
 	s.executing = true
+	s.interruptRequested = false
 	s.currentTopic = ""
 	s.totalTopics = 0
 	s.processedTopics = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	s.execCancel = cancel
 	s.mu.Unlock()
 
 	defer func() {
-		time.Sleep(2 * time.Second)
+		cancel()
 		s.mu.Lock()
+		s.execCancel = nil
 		s.executing = false
 		s.currentTopic = ""
 		s.totalTopics = 0
 		s.processedTopics = 0
 		s.mu.Unlock()
+		time.Sleep(2 * time.Second)
 		log.Printf("[%s] [EXECUTION] Execution state reset", time.Now().Format("2006-01-02 15:04:05"))
 	}()
 
@@ -205,20 +213,6 @@ func (s *Scheduler) execute() {
 		return
 	}
 
-	log.Printf("[%s] [EXECUTION] Clearing data rows from Google Sheet", time.Now().Format("2006-01-02 15:04:05"))
-	if err := sheetsClient.ClearDataRows(); err != nil {
-		log.Printf("[%s] [EXECUTION ERROR] Failed to clear data rows: %v", time.Now().Format("2006-01-02 15:04:05"), err)
-		s.addLog(models.ExecutionLog{
-			Timestamp: time.Now(),
-			Success:   false,
-			Message:   fmt.Sprintf("Failed to clear data rows: %v", err),
-		})
-		return
-	}
-	log.Printf("[%s] [EXECUTION] Data rows cleared successfully", time.Now().Format("2006-01-02 15:04:05"))
-
-	var allItems []models.NewsItem
-
 	validTopics := make([]models.TopicPrompt, 0)
 	for _, tp := range cfg.Topics {
 		if tp.Topic != "" && tp.Prompt != "" {
@@ -231,33 +225,44 @@ func (s *Scheduler) execute() {
 	s.mu.Unlock()
 
 	log.Printf("[%s] [EXECUTION] Starting execution with %d topics", time.Now().Format("2006-01-02 15:04:05"), len(validTopics))
-	for idx, tp := range validTopics {
-		log.Printf("[%s] [EXECUTION] Loop iteration %d: topic='%s', prompt length=%d", time.Now().Format("2006-01-02 15:04:05"), idx, tp.Topic, len(tp.Prompt))
-	}
 
+	var totalWritten int
+	interrupted := false
 	for i, tp := range validTopics {
 		s.mu.Lock()
+		if s.interruptRequested {
+			s.mu.Unlock()
+			log.Printf("[%s] [EXECUTION] Interrupt requested, stopping", time.Now().Format("2006-01-02 15:04:05"))
+			interrupted = true
+			break
+		}
 		s.currentTopic = tp.Topic
 		s.processedTopics = i
 		s.mu.Unlock()
 
 		log.Printf("[%s] [EXECUTION] Processing topic %d/%d: %s (Progress: %d/%d)", time.Now().Format("2006-01-02 15:04:05"), i+1, len(validTopics), tp.Topic, i, len(validTopics))
 
-		links, reqURL, reqBody, respCode, respBody, err := grokClient.FetchLinks(tp.Prompt, tp.Count)
+		validatedLinks, reqURL, reqBody, respCode, respBody, validationErrors, llmDuration, err := grokClient.FetchLinks(ctx, tp.Prompt, tp.Count)
+		if ctx.Err() != nil {
+			interrupted = true
+			log.Printf("[%s] [EXECUTION] Interrupted (context cancelled)", time.Now().Format("2006-01-02 15:04:05"))
+			break
+		}
 		if err != nil {
 			log.Printf("[%s] [EXECUTION ERROR] Failed to fetch links for topic '%s': %v", time.Now().Format("2006-01-02 15:04:05"), tp.Topic, err)
 			s.addLog(models.ExecutionLog{
-				Timestamp:    time.Now(),
-				Success:      false,
-				Message:      fmt.Sprintf("Failed to fetch links: %v", err),
-				Topic:        tp.Topic,
-				LinksCount:   0,
-				ParsedLinks:  []string{},
-				RequestURL:   reqURL,
-				RequestBody:  reqBody,
-				ResponseCode: respCode,
-				ResponseBody: respBody,
-				Error:        err.Error(),
+				Timestamp:           time.Now(),
+				Success:             false,
+				Message:             fmt.Sprintf("Failed to fetch links: %v", err),
+				Topic:               tp.Topic,
+				LinksCount:          0,
+				ParsedLinks:         []string{},
+				RequestURL:          reqURL,
+				RequestBody:         reqBody,
+				ResponseCode:        respCode,
+				ResponseBody:        respBody,
+				ResponseTimeSeconds: llmDuration.Seconds(),
+				Error:               err.Error(),
 			})
 			s.mu.Lock()
 			s.processedTopics = i + 1
@@ -265,63 +270,92 @@ func (s *Scheduler) execute() {
 			continue
 		}
 
-		validLinks := make([]string, 0)
-		for _, link := range links {
-			trimmedLink := strings.TrimSpace(link)
-			trimmedLink = strings.TrimRight(trimmedLink, ".,;:!?)")
-			trimmedLink = strings.TrimRight(trimmedLink, ".,;:!?)")
-			
-			if trimmedLink != "" && len(trimmedLink) > 10 && strings.HasPrefix(trimmedLink, "http") {
-				validLinks = append(validLinks, trimmedLink)
-				allItems = append(allItems, models.NewsItem{
-					URL:      trimmedLink,
-					Topic:    tp.Topic,
-					Priority: 1,
-				})
-				log.Printf("[%s] [EXECUTION] Added valid link: %s", time.Now().Format("2006-01-02 15:04:05"), trimmedLink)
-			} else {
-				log.Printf("[%s] [EXECUTION] Rejected invalid link (len=%d, prefix=%s): %s", time.Now().Format("2006-01-02 15:04:05"), len(trimmedLink), func() string {
-					if len(trimmedLink) > 5 {
-						return trimmedLink[:5]
-					}
-					return trimmedLink
-				}(), trimmedLink)
-			}
+		ts := time.Now().Format("2006-01-02 15:04:05")
+		for _, link := range validatedLinks {
+			log.Printf("[%s] [EXECUTION] Validated link: %s (200)", ts, link)
+		}
+		for u, reason := range validationErrors {
+			log.Printf("[%s] [EXECUTION] Invalid link: %s (%s)", ts, u, reason)
 		}
 
-		log.Printf("[%s] [EXECUTION] Successfully parsed %d valid links from %d total links for topic '%s'", time.Now().Format("2006-01-02 15:04:05"), len(validLinks), len(links), tp.Topic)
-		if len(validLinks) > 0 {
-			log.Printf("[%s] [EXECUTION] Valid links: %v", time.Now().Format("2006-01-02 15:04:05"), validLinks)
-		} else {
-			log.Printf("[%s] [EXECUTION] WARNING: No valid links found! All %d links were rejected", time.Now().Format("2006-01-02 15:04:05"), len(links))
-		}
-		
+		log.Printf("[%s] [EXECUTION] Topic '%s': %d validated, %d invalid", ts, tp.Topic, len(validatedLinks), len(validationErrors))
 		isSuccess := respCode >= 200 && respCode < 300
-		logMessage := fmt.Sprintf("Fetched %d valid links (from %d total)", len(validLinks), len(links))
+		logMessage := fmt.Sprintf("Fetched %d validated links", len(validatedLinks))
+		if len(validationErrors) > 0 {
+			logMessage = fmt.Sprintf("%s, %d invalid", logMessage, len(validationErrors))
+		}
 		if !isSuccess {
 			logMessage = fmt.Sprintf("Request failed with status %d: %s", respCode, respBody)
 		}
-		
-		log.Printf("[%s] [EXECUTION] About to add log entry for topic '%s'", time.Now().Format("2006-01-02 15:04:05"), tp.Topic)
 		s.addLog(models.ExecutionLog{
-			Timestamp:    time.Now(),
-			Success:      isSuccess,
-			Message:      logMessage,
-			Topic:        tp.Topic,
-			LinksCount:   len(validLinks),
-			ParsedLinks:  validLinks,
-			RequestURL:   reqURL,
-			RequestBody:  reqBody,
-			ResponseCode: respCode,
-			ResponseBody: respBody,
+			Timestamp:           time.Now(),
+			Success:             isSuccess,
+			Message:             logMessage,
+			Topic:               tp.Topic,
+			LinksCount:          len(validatedLinks),
+			ParsedLinks:         validatedLinks,
+			ValidationErrors:    validationErrors,
+			RequestURL:          reqURL,
+			RequestBody:         reqBody,
+			ResponseCode:        respCode,
+			ResponseBody:        respBody,
+			ResponseTimeSeconds: llmDuration.Seconds(),
 		})
-		log.Printf("[%s] [EXECUTION] Log entry added for topic '%s', continuing loop...", time.Now().Format("2006-01-02 15:04:05"), tp.Topic)
+
+		topicItems := make([]models.NewsItem, 0, len(validatedLinks))
+		for _, link := range validatedLinks {
+			topicItems = append(topicItems, models.NewsItem{URL: link, Topic: tp.Topic, Priority: 1})
+		}
+		if len(topicItems) > 0 {
+			if i == 0 {
+				log.Printf("[%s] [EXECUTION] Clearing data rows from Google Sheet", ts)
+				if err := sheetsClient.ClearDataRows(); err != nil {
+					log.Printf("[%s] [EXECUTION ERROR] Failed to clear data rows: %v", ts, err)
+					s.addLog(models.ExecutionLog{
+						Timestamp: time.Now(),
+						Success:   false,
+						Message:   fmt.Sprintf("Failed to clear data rows: %v", err),
+					})
+					s.mu.Lock()
+					s.processedTopics = i + 1
+					s.mu.Unlock()
+					return
+				}
+				log.Printf("[%s] [EXECUTION] Data rows cleared successfully", ts)
+				if err := sheetsClient.WriteNewsItems(topicItems); err != nil {
+					log.Printf("[%s] [EXECUTION ERROR] Failed to write to sheet: %v", ts, err)
+					s.addLog(models.ExecutionLog{
+						Timestamp: time.Now(),
+						Success:   false,
+						Message:   fmt.Sprintf("Failed to write to sheet: %v", err),
+					})
+					s.mu.Lock()
+					s.processedTopics = i + 1
+					s.mu.Unlock()
+					return
+				}
+				log.Printf("[%s] [EXECUTION] Wrote %d items to sheet (topic %s)", ts, len(topicItems), tp.Topic)
+			} else {
+				if err := sheetsClient.AppendNewsItems(topicItems); err != nil {
+					log.Printf("[%s] [EXECUTION ERROR] Failed to append to sheet: %v", ts, err)
+					s.addLog(models.ExecutionLog{
+						Timestamp: time.Now(),
+						Success:   false,
+						Message:   fmt.Sprintf("Failed to append to sheet: %v", err),
+					})
+					s.mu.Lock()
+					s.processedTopics = i + 1
+					s.mu.Unlock()
+					return
+				}
+				log.Printf("[%s] [EXECUTION] Appended %d items to sheet (topic %s)", ts, len(topicItems), tp.Topic)
+			}
+			totalWritten += len(topicItems)
+		}
 
 		s.mu.Lock()
 		s.processedTopics = i + 1
 		s.mu.Unlock()
-		log.Printf("[%s] [EXECUTION] Completed topic %d/%d: %s, moving to next topic...", time.Now().Format("2006-01-02 15:04:05"), i+1, len(validTopics), tp.Topic)
-		log.Printf("[%s] [EXECUTION] Loop will continue, i=%d, len(validTopics)=%d, will continue=%v", time.Now().Format("2006-01-02 15:04:05"), i, len(validTopics), i+1 < len(validTopics))
 	}
 
 	log.Printf("[%s] [EXECUTION] Loop finished, processed %d topics", time.Now().Format("2006-01-02 15:04:05"), len(validTopics))
@@ -331,36 +365,23 @@ func (s *Scheduler) execute() {
 	s.currentTopic = ""
 	s.mu.Unlock()
 
-	log.Printf("[%s] [EXECUTION] Completed processing all topics (%d/%d)", time.Now().Format("2006-01-02 15:04:05"), len(validTopics), len(validTopics))
-	
-	time.Sleep(1 * time.Second)
-
-	log.Printf("[%s] [EXECUTION] Total items to write: %d", time.Now().Format("2006-01-02 15:04:05"), len(allItems))
-	if len(allItems) > 0 {
-		for i, item := range allItems {
-			log.Printf("[%s] [EXECUTION] Item %d: URL=%s, Topic=%s, Priority=%d", time.Now().Format("2006-01-02 15:04:05"), i+1, item.URL, item.Topic, item.Priority)
-		}
-		log.Printf("[%s] [EXECUTION] Writing %d items to Google Sheets", time.Now().Format("2006-01-02 15:04:05"), len(allItems))
-		if err := sheetsClient.WriteNewsItems(allItems); err != nil {
-			log.Printf("[%s] [EXECUTION ERROR] Failed to write to sheet: %v", time.Now().Format("2006-01-02 15:04:05"), err)
-			s.addLog(models.ExecutionLog{
-				Timestamp: time.Now(),
-				Success:   false,
-				Message:   fmt.Sprintf("Failed to write to sheet: %v", err),
-			})
-			return
-		}
-		log.Printf("[%s] [EXECUTION] Successfully wrote %d items to Google Sheets", time.Now().Format("2006-01-02 15:04:05"), len(allItems))
-	} else {
-		log.Printf("[%s] [EXECUTION] WARNING: No items to write to sheet!", time.Now().Format("2006-01-02 15:04:05"))
+	if interrupted {
+		log.Printf("[%s] [EXECUTION] Execution interrupted by user", time.Now().Format("2006-01-02 15:04:05"))
+		s.addLog(models.ExecutionLog{
+			Timestamp: time.Now(),
+			Success:   false,
+			Message:   fmt.Sprintf("Execution interrupted (wrote %d items)", totalWritten),
+		})
+		return
 	}
+
+	log.Printf("[%s] [EXECUTION] Completed processing all topics (%d/%d)", time.Now().Format("2006-01-02 15:04:05"), len(validTopics), len(validTopics))
 
 	s.addLog(models.ExecutionLog{
 		Timestamp: time.Now(),
 		Success:   true,
-		Message:   fmt.Sprintf("Successfully wrote %d items to sheet", len(allItems)),
+		Message:   fmt.Sprintf("Successfully wrote %d items to sheet", totalWritten),
 	})
-	
 	log.Printf("[%s] [EXECUTION] Execution completed successfully", time.Now().Format("2006-01-02 15:04:05"))
 }
 
@@ -528,6 +549,17 @@ func (s *Scheduler) IsExecuting() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.executing
+}
+
+func (s *Scheduler) RequestInterrupt() {
+	s.mu.Lock()
+	cancel := s.execCancel
+	s.execCancel = nil
+	s.interruptRequested = true
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel() // abort in-flight LLM request immediately
+	}
 }
 
 func (s *Scheduler) GetProgress() (bool, string, int, int) {

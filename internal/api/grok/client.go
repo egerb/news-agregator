@@ -42,7 +42,7 @@ func (c *Client) FetchLinks(ctx context.Context, prompt string, desiredCount int
 	var lastRespBody string
 	var lastDuration time.Duration
 	var lastCallErr error
-	const maxRetries = 5
+	const maxRetries = 10
 	validationClient := &http.Client{
 		Timeout: 8 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -54,15 +54,11 @@ func (c *Client) FetchLinks(ctx context.Context, prompt string, desiredCount int
 	}
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		remaining := desiredCount
-		if desiredCount > 0 && len(validatedSet) < desiredCount {
-			remaining = desiredCount - len(validatedSet)
-		}
 		excludeURLs := make([]string, 0, len(validatedSet))
 		for u := range validatedSet {
 			excludeURLs = append(excludeURLs, u)
 		}
-		rawLinks, rURL, rBody, rCode, rResp, dur, callErr := c.callLLM(ctx, prompt, remaining, excludeURLs)
+		rawLinks, rURL, rBody, rCode, rResp, dur, callErr := c.callLLM(ctx, prompt, desiredCount, excludeURLs, attempt)
 		lastReqURL, lastReqBody, lastRespCode, lastRespBody, lastDuration = rURL, rBody, rCode, rResp, dur
 		if ctx.Err() != nil {
 			return nil, lastReqURL, lastReqBody, lastRespCode, lastRespBody, invalidReasons, lastDuration, ctx.Err()
@@ -108,7 +104,7 @@ func (c *Client) FetchLinks(ctx context.Context, prompt string, desiredCount int
 	return validated, lastReqURL, lastReqBody, lastRespCode, lastRespBody, invalidReasons, lastDuration, nil
 }
 
-func (c *Client) callLLM(ctx context.Context, prompt string, desiredCount int, excludeURLs []string) ([]string, string, string, int, string, time.Duration, error) {
+func (c *Client) callLLM(ctx context.Context, prompt string, desiredCount int, excludeURLs []string, attempt int) ([]string, string, string, int, string, time.Duration, error) {
 	reqURL := strings.TrimSuffix(strings.TrimSpace(c.BaseURL), "/")
 	tools := make([]map[string]interface{}, 0)
 	now := time.Now()
@@ -146,25 +142,64 @@ func (c *Client) callLLM(ctx context.Context, prompt string, desiredCount int, e
 			map[string]interface{}{"type": "x_search", "parameters": map[string]interface{}{"from_date": fromDate, "to_date": toDate, "enable_image_understanding": false, "enable_video_understanding": false}},
 		)
 	}
-	systemText := `You are a strict news aggregation agent.
+	systemText := `You are a strict, high-precision news aggregation agent.
 
-You MUST:
-- Use web_search and x_search tools.
-- Collect the FULL requested number of URLs before responding.
-- Continue searching until all URLs are valid and meet requirements.
+MISSION:
+Return ONLY the exact requested number of high-quality, factual news article URLs.
 
-Rules:
-- Only factual, event-based fundamental news.
-- If a URL is invalid, inaccessible, duplicated, or outside the last 24 hours, discard it and continue searching.
-- Prioritize search actions over reasoning.
-- Do NOT stop early.
+GENERAL BEHAVIOR:
+- Act deterministically and conservatively.
+- Do not guess or invent links.
+- Never fabricate URLs.
+- Prefer searching again rather than reasoning or assuming.
 
-Output:
+TOOLS:
+- You MUST use web_search and x_search tools to find articles.
+- Perform MULTIPLE searches if needed.
+- Always prioritize additional searches over internal reasoning.
+
+SEARCH STRATEGY:
+- Each search should gather MANY candidate URLs at once (at least 10 when available).
+- Always over-collect candidates first, then filter and rank.
+- Do not search one-by-one.
+- If results are insufficient or uncertain, search again.
+
+STOP CONDITION:
+- NEVER stop early.
+- NEVER return partial results.
+- Continue searching until the FULL requested number of valid URLs is collected.
+
+ARTICLE REQUIREMENTS:
+- Only factual, event-based, fundamental news.
+- No opinion, analysis, editorial, explainer, or concern pieces.
+- Articles must fall strictly within the requested time window.
+
+SOURCE QUALITY:
+- Prefer highly reputable US news agencies and mainstream outlets.
+- Avoid low-quality blogs, aggregators, or unknown domains.
+
+DEDUPLICATION:
+- Avoid returning multiple links about the same underlying event/story.
+- Prefer the single most complete or authoritative article per story.
+- Avoid repeating the same root domain unless necessary.
+- Never place two links from the same root domain consecutively.
+- Treat subdomains and sections as the same source.
+
+URL QUALITY:
+- Use direct canonical article URLs only.
+- Avoid AMP pages.
+- Avoid tag, archive, section, listing, or category pages.
+- Avoid tracking parameters when possible.
+- If a URL is duplicated, invalid, inaccessible, paywalled, non-article, or outside the time range, discard it and continue searching.
+
+OUTPUT FORMAT (STRICT):
 - URLs only
 - One per line
-- No extra text
-
-When searching, try to collect MULTIPLE candidate URLs per search turn before filtering.`
+- No explanations
+- No titles
+- No commentary
+- No formatting
+- No extra text`
 	countNote := ""
 	if desiredCount > 0 {
 		countNote = fmt.Sprintf(" Target links: %d.", desiredCount)
@@ -174,9 +209,12 @@ When searching, try to collect MULTIPLE candidate URLs per search turn before fi
 		excludeNote = "\nDo NOT return any of these URLs again (already collected): " + strings.Join(excludeURLs, ", ")
 	}
 	userText := fmt.Sprintf("Today is %s. %s\n\nIMPORTANT: You MUST use the search tools (web_search and x_search) to find recent news. Search for news from the last 24 hours only (from %s to %s). Keep searching until you can return the full requested number of URLs.%s After searching, return ONLY URLs, one per line. No explanations, no formatting, no other text. Just the URLs.%s", toDate, prompt, fromDate, toDate, countNote, excludeNote)
-	maxTurns := int(float64(desiredCount)*2.4 + 8)
+	maxTurns := int(float64(desiredCount)*3 + 10)
 	if maxTurns < 8 {
 		maxTurns = 8
+	}
+	if attempt > 0 {
+		maxTurns = int(float64(maxTurns) * 1.3)
 	}
 	reqBody := map[string]interface{}{
 		"model": c.Model,
@@ -184,8 +222,8 @@ When searching, try to collect MULTIPLE candidate URLs per search turn before fi
 			{"role": "system", "content": []map[string]interface{}{{"type": "input_text", "text": systemText}}},
 			{"role": "user", "content": []map[string]interface{}{{"type": "input_text", "text": userText}}},
 		},
-		"temperature": 0.2,
-		"reasoning": map[string]string{"effort": "high"},
+		"temperature": 0.1,
+		"reasoning": map[string]string{"effort": "medium"},
 		"max_turns": maxTurns,
 	}
 	if len(tools) > 0 {
